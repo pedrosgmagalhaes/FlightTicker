@@ -1,4 +1,5 @@
 .env
+.env.*
 __pycache__/
 *.pyc
 *.pyo
@@ -21,6 +22,11 @@ wheels/
 *.egg
 MANIFEST
 
+# Python caches
+.pytest_cache/
+.coverage
+htmlcov/
+
 # IDEs
 .vscode/
 .idea/
@@ -30,3 +36,10 @@ MANIFEST
 # OS
 .DS_Store
 Thumbs.db
+
+# Virtualenvs
+venv/
+.venv/
+
+# Script caches
+scripts/__pycache__/
