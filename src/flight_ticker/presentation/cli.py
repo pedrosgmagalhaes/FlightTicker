@@ -5,6 +5,7 @@ import asyncio
 import argparse
 from datetime import datetime
 from datetime import date, timedelta
+from typing import Optional
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -41,7 +42,13 @@ class FlightTickerCLI:
             progress.update(task, description="Busca concluída!")
         
         # Exibe resultados
-        self._display_results(result, args.no_ai)
+        self._display_results(
+            result,
+            args.no_ai,
+            getattr(args, "open_best", False),
+            getattr(args, "open_cheapest", False),
+            getattr(args, "open_index", None),
+        )
     
     def _parse_arguments(self) -> argparse.Namespace:
         """Configura e processa argumentos da linha de comando"""
@@ -94,6 +101,14 @@ Exemplos de uso:
                           help="Desativa ranqueamento por IA (ordena apenas por preço)")
         parser.add_argument("--limit", type=int, default=20,
                           help="Limite de ofertas exibidas (padrão: 20)")
+
+        # Abertura de links no navegador
+        parser.add_argument("--open-best", action="store_true",
+                          help="Abre os links (direto e alternativo) da melhor oferta")
+        parser.add_argument("--open-cheapest", action="store_true",
+                          help="Abre os links (direto e alternativo) da oferta mais barata")
+        parser.add_argument("--open-index", type=int,
+                          help="Abre os links (direto e alternativo) da oferta pelo índice exibido (1..limit)")
 
         # Busca por mês inteiro (partida)
         mx.add_argument("--month",
@@ -160,7 +175,7 @@ Exemplos de uso:
             cur = cur + timedelta(days=1)
         return dates
     
-    def _display_results(self, result, no_ai: bool):
+    def _display_results(self, result, no_ai: bool, open_best: bool = False, open_cheapest: bool = False, open_index: Optional[int] = None):
         """Exibe resultados da busca"""
         if not result.offers:
             self.console.print(
@@ -180,7 +195,7 @@ Exemplos de uso:
         table = Table(show_lines=True, title=f"🛫 Melhores Ofertas Encontradas ({len(limited_offers)} de {result.total_found})")
         
         table.add_column("Provedor", style="bold cyan", width=12)
-        table.add_column("Preço", style="bold green", justify="right", width=10)
+        table.add_column("Preço", style="bold green", justify="right", width=24)
         table.add_column("Rota", style="yellow", width=20)
         table.add_column("Paradas", justify="center", width=8)
         table.add_column("Classe", width=10)
@@ -191,10 +206,16 @@ Exemplos de uso:
         table.add_column("Observações", width=60)
         
         # Adiciona linhas
+        pax_count = max(1, (
+            result.search_criteria.adults
+            + result.search_criteria.children
+            + result.search_criteria.infants
+        ))
         for offer in limited_offers:
+            per_person = (offer.price_total / pax_count) if pax_count else offer.price_total
             row = [
                 offer.provider,
-                f"{offer.currency} {offer.price_total:.2f}",
+                f"{offer.currency} {offer.price_total:.2f} | {offer.currency} {per_person:.2f}/pessoa",
                 offer.route_summary,
                 str(offer.total_stops),
                 offer.cabin_class or "ECONOMY",
@@ -239,14 +260,52 @@ Exemplos de uso:
             table.add_row(*row)
         
         self.console.print(table)
+
+        # Abertura de links conforme flags
+        try:
+            import webbrowser
+
+            def _open_links(of):
+                opened = False
+                for lk in [getattr(of, "booking_link", None), getattr(of, "alt_booking_link", None)]:
+                    if lk and isinstance(lk, str) and lk.startswith("http"):
+                        webbrowser.open_new_tab(lk)
+                        opened = True
+                return opened
+
+            target_offer = None
+            if open_index and isinstance(open_index, int):
+                idx = open_index - 1
+                if 0 <= idx < len(limited_offers):
+                    target_offer = limited_offers[idx]
+            elif open_best and result.best_offer:
+                target_offer = result.best_offer
+            elif open_cheapest and result.cheapest_offer:
+                target_offer = result.cheapest_offer
+
+            if target_offer:
+                opened = _open_links(target_offer)
+                if opened:
+                    self.console.print(Panel.fit("Abrindo links no navegador...", border_style="green"))
+                else:
+                    self.console.print(Panel.fit("Nenhum link disponível para abrir.", border_style="red"))
+        except Exception:
+            pass
         
         # Estatísticas
         if result.best_offer and result.cheapest_offer:
+            pax_count_stats = max(1, (
+                result.search_criteria.adults
+                + result.search_criteria.children
+                + result.search_criteria.infants
+            ))
+            best_pp = result.best_offer.price_total / pax_count_stats if pax_count_stats else result.best_offer.price_total
+            cheapest_pp = result.cheapest_offer.price_total / pax_count_stats if pax_count_stats else result.cheapest_offer.price_total
             stats_text = f"""
 📊 **Estatísticas da Busca:**
 • Total encontrado: {result.total_found} ofertas
-• Melhor por IA: {result.best_offer.currency} {result.best_offer.price_total:.2f}
-• Mais barato: {result.cheapest_offer.currency} {result.cheapest_offer.price_total:.2f}
+• Melhor por IA: {result.best_offer.currency} {result.best_offer.price_total:.2f} (por pessoa: {result.best_offer.currency} {best_pp:.2f})
+• Mais barato: {result.cheapest_offer.currency} {result.cheapest_offer.price_total:.2f} (por pessoa: {result.cheapest_offer.currency} {cheapest_pp:.2f})
 • Busca realizada: {result.search_timestamp.strftime('%d/%m/%Y %H:%M')}
             """
             

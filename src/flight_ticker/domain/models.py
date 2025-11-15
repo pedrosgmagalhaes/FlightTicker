@@ -26,6 +26,7 @@ class FlightOffer(BaseModel):
     cabin_class: Optional[str] = None
     segments: List[FlightSegment]
     booking_link: Optional[str] = None
+    alt_booking_link: Optional[str] = None
     refundable: Optional[bool] = None
     changeable: Optional[bool] = None
     notes: Optional[str] = None

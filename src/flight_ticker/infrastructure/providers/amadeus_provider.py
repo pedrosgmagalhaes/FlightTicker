@@ -216,6 +216,7 @@ class AmadeusProvider:
                     cabin_class=criteria.cabin_class,
                     segments=segments,
                     booking_link=checkout_link,
+                    alt_booking_link=alt_link,
                     notes=notes_text,
                 ))
                 
